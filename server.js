@@ -328,6 +328,13 @@ function staticFile(res, filePath) {
   });
 }
 
+function publicFilePath(urlPathname) {
+  const pathname = decodeURIComponent(urlPathname).replace(/^\/+/, "");
+  if (pathname.includes("..")) return null;
+  const filePath = path.join(PUBLIC_DIR, pathname);
+  return filePath.startsWith(PUBLIC_DIR) ? filePath : null;
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
@@ -596,9 +603,8 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  const safePath = path.normalize(url.pathname).replace(/^(\.\.[/\\])+/, "");
-  const filePath = path.join(PUBLIC_DIR, safePath);
-  if (filePath.startsWith(PUBLIC_DIR)) {
+  const filePath = publicFilePath(url.pathname);
+  if (filePath) {
     staticFile(res, filePath);
     return;
   }
