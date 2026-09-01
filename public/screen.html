@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>2023暑期體驗課 小鹿號任務</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="screen-shell">
+    <section class="game-wrap" aria-label="小鹿號星空射擊遊戲">
+      <canvas id="gameCanvas"></canvas>
+      <audio id="bgMusic" src="/assets/space-loop.wav" loop preload="auto"></audio>
+      <aside class="leaderboard" aria-label="存活排行榜">
+        <div class="leaderboard-title">排行榜</div>
+        <ol class="leaderboard-list" id="leaderboardList">
+          <li class="leaderboard-empty">等待挑戰者</li>
+        </ol>
+      </aside>
+      <div class="hud" aria-live="polite">
+        <div class="hud-pill">
+          <span class="hud-label">存活時間</span>
+          <span class="hud-value" id="timeValue">0</span>
+        </div>
+        <div class="hud-pill">
+          <span class="hud-label">命中</span>
+          <span class="hud-value" id="hitValue">0</span>
+        </div>
+        <div class="hud-pill">
+          <span class="hud-label">場上怪物</span>
+          <span class="hud-value" id="lifeValue">3</span>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+  <script src="/screen.js"></script>
+</body>
+</html>

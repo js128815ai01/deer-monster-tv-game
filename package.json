@@ -1,0 +1,12 @@
+{
+  "name": "deer-monster-tv-game",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check public/screen.js && node --check public/controller.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

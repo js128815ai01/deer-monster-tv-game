@@ -1,0 +1,12 @@
+node_modules/
+.venv/
+models/
+tools/
+
+.env
+*.local
+npm-debug.log*
+
+ai-bg-test-result*.json
+bg-test-result.json
+test-monster.png

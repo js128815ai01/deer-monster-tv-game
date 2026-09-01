@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: deer-monster-tv-game
+    env: docker
+    plan: starter
+    autoDeploy: false
+    healthCheckPath: /api/health
+    envVars:
+      - key: MAX_PLAYERS
+        value: "20"
+      - key: USE_REMBG
+        value: "1"

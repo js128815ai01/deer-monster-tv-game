@@ -1,0 +1,9 @@
+.venv
+models
+tools
+node_modules
+npm-debug.log
+*.local
+ai-bg-test-result*.json
+bg-test-result.json
+test-monster.png

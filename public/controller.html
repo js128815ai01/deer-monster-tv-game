@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>體驗課手繪怪物控制器</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="controller" id="controllerRoot">
+    <section class="phone-panel" id="uploadPanel">
+      <h1>體驗課怪物登場</h1>
+      <p class="note">把課堂上畫好的怪物拍下來，送進小鹿號任務關卡。</p>
+      <label class="field">
+        <span>怪物名稱</span>
+        <input id="monsterName" type="text" maxlength="20" placeholder="可不填">
+      </label>
+      <div class="capture-actions">
+        <label class="file-action secondary">
+          <span>選照片</span>
+          <input id="galleryFile" type="file" accept="image/*">
+        </label>
+      </div>
+      <label class="check-row">
+        <input id="removePaper" type="checkbox" checked>
+        <span>上傳時使用 AI 去背</span>
+      </label>
+      <canvas class="preview" id="previewCanvas" width="640" height="640" aria-label="怪物預覽"></canvas>
+      <button class="primary" id="uploadBtn" disabled>送進小鹿號關卡</button>
+      <div class="alert" id="uploadStatus" role="status" aria-live="polite"></div>
+    </section>
+
+    <section class="phone-panel control-panel" id="controlPanel" hidden>
+      <h2>怪物移動挑戰</h2>
+      <p class="note">按住圓盤拖曳，在星球空白關卡裡躲開小鹿號子彈。</p>
+      <div class="joystick" id="joystick" aria-label="怪物方向控制">
+        <div class="stick" id="stick"></div>
+      </div>
+      <button class="secondary" id="stopBtn">停止移動</button>
+    </section>
+    <section class="countdown-screen" id="countdownScreen" hidden>
+      <div class="countdown-number" id="countdownNumber">3</div>
+    </section>
+    <section class="death-screen" id="deathScreen" hidden>
+      <div class="death-panel">
+        <div class="gift-scene" aria-hidden="true">
+          <img class="city-character city-character-left" src="/assets/gift-character-blue.png" alt="">
+          <img class="gift-image" src="/assets/challenge-gift.jpg" alt="闖關好禮">
+          <img class="city-character city-character-right" src="/assets/gift-character-red-star.png" alt="">
+        </div>
+        <h2>挑戰結束</h2>
+        <p class="gift-message">請記得索取闖關好禮</p>
+      </div>
+    </section>
+  </main>
+  <script src="/controller.js"></script>
+</body>
+</html>
