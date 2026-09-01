@@ -1,5 +1,5 @@
 const params = new URLSearchParams(window.location.search);
-const session = params.get("session") || "";
+let session = params.get("session") || "";
 const galleryInput = document.getElementById("galleryFile");
 const nameInput = document.getElementById("monsterName");
 const removePaper = document.getElementById("removePaper");
@@ -434,8 +434,17 @@ drawEmptyPreview();
 
 async function joinGame() {
   if (!session) {
-    uploadStatus.textContent = "缺少課程場次代碼，請重新掃描 QR code。";
-    return;
+    try {
+      const res = await fetch("/api/session");
+      const info = await res.json();
+      session = info.sessionId || "";
+    } catch {
+      session = "";
+    }
+    if (!session) {
+      uploadStatus.textContent = "無法取得課程場次，請重新整理頁面。";
+      return false;
+    }
   }
   try {
     const res = await fetch("/api/join", {

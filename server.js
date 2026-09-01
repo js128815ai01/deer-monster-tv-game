@@ -368,7 +368,7 @@ const server = http.createServer(async (req, res) => {
       sessionId,
       batch: state.batch,
       maxPlayers: MAX_PLAYERS,
-      uploadUrl: `${baseUrl}/controller.html?session=${sessionId}&v=${sessionId}`,
+      uploadUrl: `${baseUrl}/controller.html`,
       screenUrl: `${baseUrl}/screen?v=${sessionId}`,
       currentHost: req.headers.host,
     });
