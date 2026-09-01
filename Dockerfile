@@ -4,6 +4,8 @@ ENV NODE_ENV=production
 ENV PORT=3128
 ENV U2NET_HOME=/app/models
 ENV PYTHONUNBUFFERED=1
+ENV BG_REMOVE_TIMEOUT_MS=60000
+ENV HEURISTIC_TIMEOUT_MS=12000
 ENV PATH=/app/.venv/bin:$PATH
 
 WORKDIR /app
@@ -18,6 +20,9 @@ COPY requirements.txt ./
 RUN python3 -m venv /app/.venv \
   && /app/.venv/bin/pip install --no-cache-dir --upgrade pip \
   && /app/.venv/bin/pip install --no-cache-dir -r requirements.txt
+
+RUN mkdir -p /app/models \
+  && /app/.venv/bin/python -c "from rembg import new_session; new_session('u2netp')"
 
 COPY public ./public
 COPY remove_background.py server.js ./

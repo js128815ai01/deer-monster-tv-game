@@ -135,6 +135,10 @@ def main():
     payload = json.loads(sys.stdin.read())
     data_url = payload["image"]
     if payload.get("removeBackground", True):
+        if payload.get("mode") == "heuristic":
+            data_url = remove_background(data_url)
+            sys.stdout.write(json.dumps({"ok": True, "image": data_url}))
+            return
         try:
             if os.environ.get("USE_REMBG", "1") != "0":
                 data_url = remove_background_ai(data_url)

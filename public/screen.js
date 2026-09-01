@@ -245,7 +245,9 @@ function syncPlayer(serverPlayer) {
   player.slot = serverPlayer.slot;
   player.name = serverPlayer.name || "";
   player.image = serverPlayer.image || null;
-  player.control = serverPlayer.control || { x: 0, y: 0, boost: false };
+  if (!existing || !player.lastControlAt || performance.now() - player.lastControlAt > 750) {
+    player.control = serverPlayer.control || { x: 0, y: 0, boost: false };
+  }
 
   if (player.image && (!player.imageElement || player.imageElement.src !== player.image)) {
     const img = new Image();
@@ -333,7 +335,10 @@ function connectEvents() {
   events.addEventListener("control", (event) => {
     const data = JSON.parse(event.data);
     const player = game.players.get(data.playerId);
-    if (player) player.control = data.control;
+    if (player) {
+      player.control = data.control;
+      player.lastControlAt = performance.now();
+    }
   });
   events.addEventListener("eliminated", (event) => {
     const data = JSON.parse(event.data);
@@ -528,7 +533,7 @@ function update(dt, now) {
   for (const player of game.players.values()) {
     const prevX = player.x;
     const prevY = player.y;
-    const speed = (player.control?.boost ? 10.8 : 7.1) * (dt / 16.67);
+    const speed = (player.control?.boost ? 13.4 : 8.9) * (dt / 16.67);
     player.x += (player.control?.x || 0) * speed + player.knockX * (dt / 16.67);
     player.y += (player.control?.y || 0) * speed + player.knockY * (dt / 16.67);
     player.knockX *= Math.pow(0.86, dt / 16.67);
@@ -772,5 +777,5 @@ initQr().catch(() => {
   if (qrBox) qrBox.textContent = "QR code 載入失敗，請確認伺服器網址";
 });
 connectEvents();
-setInterval(pollState, 140);
+setInterval(pollState, 520);
 requestAnimationFrame(loop);

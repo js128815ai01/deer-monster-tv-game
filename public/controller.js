@@ -31,8 +31,8 @@ let controlInFlight = false;
 let controlPending = false;
 let lastControlSentAt = 0;
 let resendTimer = null;
-const CONTROL_SEND_INTERVAL = 34;
-const CONTROL_RESEND_INTERVAL = 58;
+const CONTROL_SEND_INTERVAL = 22;
+const CONTROL_RESEND_INTERVAL = 38;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -142,7 +142,7 @@ function drawSourceToCanvas(targetCtx, width, height, source) {
 }
 
 function buildUploadImage() {
-  if (!lastImageSource) return preview.toDataURL("image/png");
+  if (!lastImageSource || removePaper.checked) return preview.toDataURL("image/png");
   const uploadCanvas = document.createElement("canvas");
   uploadCanvas.width = 900;
   uploadCanvas.height = 900;
@@ -290,10 +290,6 @@ function queueControlSend(force) {
     resendTimer = setTimeout(() => queueControlSend(true), wait);
     return;
   }
-  if (controlInFlight) {
-    controlPending = true;
-    return;
-  }
   flushControl();
 }
 
@@ -310,17 +306,13 @@ function flushControl() {
   controlPending = false;
   lastControlSentAt = performance.now();
 
-  if (navigator.sendBeacon) {
-    const sent = navigator.sendBeacon("/api/control", new Blob([payload], { type: "application/json" }));
-    if (sent) return;
-  }
-
   controlInFlight = true;
   fetch("/api/control", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: payload,
     keepalive: true,
+    cache: "no-store",
   })
     .then((res) => {
       if (res.status === 202) return;

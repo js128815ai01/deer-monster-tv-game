@@ -14,6 +14,8 @@ const MODEL_DIR = path.join(__dirname, "models");
 const sessionId = crypto.randomBytes(4).toString("hex");
 const clients = new Set();
 const MAX_PLAYERS = Number(process.env.MAX_PLAYERS || 20);
+const BG_REMOVE_TIMEOUT_MS = Number(process.env.BG_REMOVE_TIMEOUT_MS || 45000);
+const HEURISTIC_TIMEOUT_MS = Number(process.env.HEURISTIC_TIMEOUT_MS || 9000);
 
 const state = {
   sessionId,
@@ -187,8 +189,7 @@ function playerStatus(id) {
   };
 }
 
-function processImage(image, removeBackground) {
-  if (!removeBackground) return Promise.resolve(image);
+function runBackgroundRemoval(image, options = {}) {
   return new Promise((resolve) => {
     const script = path.join(__dirname, "remove_background.py");
     fs.mkdirSync(MODEL_DIR, { recursive: true });
@@ -199,6 +200,7 @@ function processImage(image, removeBackground) {
       env: {
         ...process.env,
         U2NET_HOME: MODEL_DIR,
+        USE_REMBG: options.useAi === false ? "0" : (process.env.USE_REMBG || "1"),
       },
     });
     let stdout = "";
@@ -212,15 +214,19 @@ function processImage(image, removeBackground) {
     const finish = (processedImage) => {
       if (settled) return;
       settled = true;
-      resolve(processedImage);
+      resolve({ ok: true, image: processedImage });
     };
     const timeout = setTimeout(() => {
-      console.warn("background removal timed out; using original image");
+      console.warn(`background removal ${options.mode || "ai"} timed out`);
       child.kill();
-      finish(image);
-    }, 15000);
+      if (!settled) {
+        settled = true;
+        resolve({ ok: false, image, error: "timeout" });
+      }
+    }, options.timeoutMs || BG_REMOVE_TIMEOUT_MS);
     child.on("close", () => {
       clearTimeout(timeout);
+      if (settled) return;
       try {
         const result = JSON.parse(stdout);
         if (result.ok && result.image) {
@@ -230,11 +236,34 @@ function processImage(image, removeBackground) {
       } catch {
         // Fall back to the original image when local processing fails.
       }
-      console.warn("background removal skipped:", stderr || stdout);
-      finish(image);
+      console.warn(`background removal ${options.mode || "ai"} skipped:`, stderr || stdout);
+      settled = true;
+      resolve({ ok: false, image, error: stderr || stdout });
     });
-    child.stdin.end(JSON.stringify({ image, removeBackground }));
+    child.stdin.end(JSON.stringify({
+      image,
+      removeBackground: true,
+      mode: options.mode || "ai",
+    }));
   });
+}
+
+async function processImage(image, removeBackground) {
+  if (!removeBackground) return image;
+  const aiResult = await runBackgroundRemoval(image, {
+    mode: "ai",
+    useAi: true,
+    timeoutMs: BG_REMOVE_TIMEOUT_MS,
+  });
+  if (aiResult.ok && aiResult.image) return aiResult.image;
+
+  const fallbackResult = await runBackgroundRemoval(image, {
+    mode: "heuristic",
+    useAi: false,
+    timeoutMs: HEURISTIC_TIMEOUT_MS,
+  });
+  if (fallbackResult.ok && fallbackResult.image) return fallbackResult.image;
+  return image;
 }
 
 function removeFrom(list, player) {
