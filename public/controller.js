@@ -27,6 +27,7 @@ let lastImageSource = null;
 let enteringControl = false;
 let eliminated = false;
 let stageStarted = false;
+let uploadInFlight = false;
 let controlInFlight = false;
 let controlPending = false;
 let lastControlSentAt = 0;
@@ -51,7 +52,7 @@ function drawEmptyPreview() {
 }
 
 function refreshUploadButton() {
-  uploadBtn.disabled = !imageReady;
+  uploadBtn.disabled = !imageReady || uploadInFlight || enteringControl || stageStarted;
 }
 
 function sourceSize(source) {
@@ -199,8 +200,9 @@ async function uploadMonster(retried = false) {
     refreshUploadButton();
     return;
   }
-  uploadBtn.disabled = true;
-  uploadStatus.textContent = "上傳中...";
+  uploadInFlight = true;
+  refreshUploadButton();
+  uploadStatus.textContent = removePaper.checked ? "正在去背，完成後才會送出..." : "正在送出圖片...";
   try {
     const image = buildUploadImage();
     if (image.length > 7 * 1024 * 1024) {
@@ -227,11 +229,14 @@ async function uploadMonster(retried = false) {
       if (joinedNow) return uploadMonster(true);
     }
     if (!data.ok) throw new Error(data.error || "upload failed");
-    uploadStatus.textContent = "已上傳，準備進入小鹿號關卡。";
+    uploadStatus.textContent = "去背完成，準備進入小鹿號關卡。";
     startCountdownThenControl();
   } catch (error) {
-    uploadStatus.textContent = `上傳失敗：${error.message}`;
+    uploadStatus.textContent = error.message.includes("background removal failed")
+      ? "去背失敗，圖片尚未送出，請重新選取照片再試一次。"
+      : `上傳失敗：${error.message}`;
   } finally {
+    uploadInFlight = false;
     refreshUploadButton();
   }
 }

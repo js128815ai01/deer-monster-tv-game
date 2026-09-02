@@ -16,8 +16,8 @@ const clients = new Set();
 const MAX_PLAYERS = Number(process.env.MAX_PLAYERS || 20);
 const BG_REMOVE_TIMEOUT_MS = Number(process.env.BG_REMOVE_TIMEOUT_MS || 45000);
 const HEURISTIC_TIMEOUT_MS = Number(process.env.HEURISTIC_TIMEOUT_MS || 9000);
-const imageEnhancementQueue = [];
-let imageEnhancementRunning = false;
+const imageProcessingQueue = [];
+let imageProcessingRunning = false;
 
 const state = {
   sessionId,
@@ -252,46 +252,48 @@ function runBackgroundRemoval(image, options = {}) {
 }
 
 async function processImage(image, removeBackground) {
-  if (!removeBackground) return image;
+  if (!removeBackground) return { ok: true, image };
   const aiResult = await runBackgroundRemoval(image, {
     mode: "ai",
     useAi: true,
     timeoutMs: BG_REMOVE_TIMEOUT_MS,
   });
-  if (aiResult.ok && aiResult.image) return aiResult.image;
+  if (aiResult.ok && aiResult.image) return aiResult;
 
   const fallbackResult = await runBackgroundRemoval(image, {
     mode: "heuristic",
     useAi: false,
     timeoutMs: HEURISTIC_TIMEOUT_MS,
   });
-  if (fallbackResult.ok && fallbackResult.image) return fallbackResult.image;
-  return image;
+  if (fallbackResult.ok && fallbackResult.image) return fallbackResult;
+  return {
+    ok: false,
+    image: null,
+    error: fallbackResult.error || aiResult.error || "background removal failed",
+  };
 }
 
-function enqueueImageEnhancement(playerId, image, imageVersion) {
-  imageEnhancementQueue.push({ playerId, image, imageVersion });
-  runNextImageEnhancement();
+function enqueueImageProcessing(image, removeBackground) {
+  if (!removeBackground) return Promise.resolve({ ok: true, image });
+  return new Promise((resolve) => {
+    imageProcessingQueue.push({ image, removeBackground, resolve });
+    runNextImageProcessing();
+  });
 }
 
-async function runNextImageEnhancement() {
-  if (imageEnhancementRunning) return;
-  const job = imageEnhancementQueue.shift();
+async function runNextImageProcessing() {
+  if (imageProcessingRunning) return;
+  const job = imageProcessingQueue.shift();
   if (!job) return;
 
-  imageEnhancementRunning = true;
+  imageProcessingRunning = true;
   try {
-    const processedImage = await processImage(job.image, true);
-    const player = findPlayer(job.playerId);
-    if (!player || player.imageVersion !== job.imageVersion || processedImage === job.image) return;
-    player.image = processedImage;
-    broadcast("player", player);
-    broadcast("state", publicState());
+    job.resolve(await processImage(job.image, job.removeBackground));
   } catch (error) {
-    console.warn("background image enhancement failed:", error.message);
+    job.resolve({ ok: false, image: null, error: error.message });
   } finally {
-    imageEnhancementRunning = false;
-    setTimeout(runNextImageEnhancement, 0);
+    imageProcessingRunning = false;
+    setTimeout(runNextImageProcessing, 0);
   }
 }
 
@@ -510,10 +512,19 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 404, { ok: false, error: "player not found" });
         return;
       }
+      const processed = await enqueueImageProcessing(body.image, body.removeBackground !== false);
+      if (!processed.ok || !processed.image) {
+        sendJson(res, 422, {
+          ok: false,
+          error: "background removal failed",
+          detail: processed.error || "unable to process image",
+        });
+        return;
+      }
       removeFrom(state.drafts, player);
       removeFrom(state.queue, player);
       removeFrom(state.players, player);
-      player.image = body.image;
+      player.image = processed.image;
       player.imageVersion = (player.imageVersion || 0) + 1;
       player.name = String(body.name || "").trim().slice(0, 20);
       player.uploadedAt = new Date().toISOString();
@@ -530,9 +541,6 @@ const server = http.createServer(async (req, res) => {
         activePlayers: state.players.length,
         queueCount: state.queue.length,
       });
-      if (body.removeBackground !== false) {
-        enqueueImageEnhancement(player.id, body.image, player.imageVersion);
-      }
     } catch (error) {
       sendJson(res, 400, { ok: false, error: error.message });
     }
