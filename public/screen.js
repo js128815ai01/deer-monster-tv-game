@@ -26,6 +26,7 @@ const game = {
   effects: [],
   leaderboard: [],
   players: new Map(),
+  controlSeq: 0,
   deer: { x: 240, y: 420, targetX: 240, targetY: 420, nextMoveAt: 0 },
   lastShot: 0,
   nextShotDelay: 520,
@@ -334,11 +335,7 @@ function connectEvents() {
   events.addEventListener("player", (event) => syncPlayer(JSON.parse(event.data)));
   events.addEventListener("control", (event) => {
     const data = JSON.parse(event.data);
-    const player = game.players.get(data.playerId);
-    if (player) {
-      player.control = data.control;
-      player.lastControlAt = performance.now();
-    }
+    applyPlayerControl(data.playerId, data.control);
   });
   events.addEventListener("eliminated", (event) => {
     const data = JSON.parse(event.data);
@@ -348,6 +345,15 @@ function connectEvents() {
   events.addEventListener("batch", (event) => syncState(JSON.parse(event.data)));
 }
 
+function applyPlayerControl(playerId, control, seq = 0) {
+  const player = game.players.get(playerId);
+  if (!player) return;
+  if (seq && player.controlSeq && seq < player.controlSeq) return;
+  player.control = control || { x: 0, y: 0, boost: false };
+  player.controlSeq = seq || player.controlSeq || 0;
+  player.lastControlAt = performance.now();
+}
+
 async function pollState() {
   try {
     const res = await fetch("/api/state");
@@ -355,6 +361,21 @@ async function pollState() {
     syncState(await res.json());
   } catch {
     // EventSource is primary; polling quietly covers unstable network paths.
+  }
+}
+
+async function pollControls() {
+  try {
+    const res = await fetch("/api/controls", { cache: "no-store" });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.seq && data.seq <= game.controlSeq) return;
+    game.controlSeq = data.seq || game.controlSeq;
+    for (const item of data.controls || []) {
+      applyPlayerControl(item.id, item.control, item.controlSeq || data.seq || 0);
+    }
+  } catch {
+    // Lightweight polling keeps phone controls moving when event streams stall.
   }
 }
 
@@ -778,4 +799,5 @@ initQr().catch(() => {
 });
 connectEvents();
 setInterval(pollState, 520);
+setInterval(pollControls, 110);
 requestAnimationFrame(loop);

@@ -36,6 +36,7 @@ const CONTROL_SEND_INTERVAL = 22;
 const CONTROL_RESEND_INTERVAL = 38;
 const TRANSPARENT_UPLOAD_SIZE = 520;
 const PHOTO_UPLOAD_SIZE = 640;
+const REMOVE_BG_UPLOAD_SIZE = 960;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -147,16 +148,18 @@ function drawSourceToCanvas(targetCtx, width, height, source) {
 function buildUploadImage() {
   const uploadCanvas = document.createElement("canvas");
   const uploadCtx = uploadCanvas.getContext("2d");
-  if (!lastImageSource || removePaper.checked) {
-    uploadCanvas.width = TRANSPARENT_UPLOAD_SIZE;
-    uploadCanvas.height = TRANSPARENT_UPLOAD_SIZE;
-    uploadCtx.drawImage(preview, 0, 0, uploadCanvas.width, uploadCanvas.height);
-    return uploadCanvas.toDataURL("image/webp", 0.78);
+  if (lastImageSource) {
+    const size = removePaper.checked ? REMOVE_BG_UPLOAD_SIZE : PHOTO_UPLOAD_SIZE;
+    uploadCanvas.width = size;
+    uploadCanvas.height = size;
+    drawSourceToCanvas(uploadCtx, uploadCanvas.width, uploadCanvas.height, lastImageSource);
+    return uploadCanvas.toDataURL("image/jpeg", removePaper.checked ? 0.88 : 0.82);
   }
-  uploadCanvas.width = PHOTO_UPLOAD_SIZE;
-  uploadCanvas.height = PHOTO_UPLOAD_SIZE;
-  drawSourceToCanvas(uploadCtx, uploadCanvas.width, uploadCanvas.height, lastImageSource);
-  return uploadCanvas.toDataURL("image/jpeg", 0.82);
+
+  uploadCanvas.width = TRANSPARENT_UPLOAD_SIZE;
+  uploadCanvas.height = TRANSPARENT_UPLOAD_SIZE;
+  uploadCtx.drawImage(preview, 0, 0, uploadCanvas.width, uploadCanvas.height);
+  return uploadCanvas.toDataURL("image/webp", 0.78);
 }
 
 function loadFile(file) {

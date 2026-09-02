@@ -20,7 +20,7 @@ const MAX_PLAYERS = Number(process.env.MAX_PLAYERS || 20);
 const BG_REMOVE_TIMEOUT_MS = Number(process.env.BG_REMOVE_TIMEOUT_MS || 45000);
 const HEURISTIC_TIMEOUT_MS = Number(process.env.HEURISTIC_TIMEOUT_MS || 9000);
 const REMOVE_BG_TIMEOUT_MS = Number(process.env.REMOVE_BG_TIMEOUT_MS || 12000);
-const REMOVE_BG_SIZE = process.env.REMOVE_BG_SIZE || "preview";
+const REMOVE_BG_SIZE = process.env.REMOVE_BG_SIZE || "auto";
 const removeBgKeys = loadRemoveBgKeys();
 let removeBgCursor = 0;
 const REMOVE_BG_MAX_KEY_ATTEMPTS = Number(process.env.REMOVE_BG_MAX_KEY_ATTEMPTS || removeBgKeys.length || 1);
@@ -39,6 +39,7 @@ const state = {
   drafts: [],
   leaderboard: [],
   eliminatedIds: new Set(),
+  controlSeq: 0,
 };
 
 function loadLocalEnvFile(filePath) {
@@ -147,6 +148,19 @@ function publicState() {
     players: state.players,
     queueCount: state.queue.length,
     leaderboard: leaderboardEntries(),
+  };
+}
+
+function publicControls() {
+  return {
+    ok: true,
+    sessionId: state.sessionId,
+    seq: state.controlSeq,
+    controls: state.players.map((player) => ({
+      id: player.id,
+      control: player.control || { x: 0, y: 0, boost: false },
+      controlSeq: player.controlSeq || 0,
+    })),
   };
 }
 
@@ -591,6 +605,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (url.pathname === "/api/controls") {
+    sendJson(res, 200, publicControls());
+    return;
+  }
+
   if (url.pathname === "/api/player-status") {
     if (url.searchParams.get("session") !== sessionId) {
       sendJson(res, 403, { ok: false, error: "session mismatch" });
@@ -759,8 +778,10 @@ const server = http.createServer(async (req, res) => {
         y: Math.max(-1, Math.min(1, Number(body.y) || 0)),
         boost: Boolean(body.boost),
       };
+      state.controlSeq += 1;
+      player.controlSeq = state.controlSeq;
       broadcast("control", { playerId: player.id, control: player.control });
-      sendJson(res, 200, { ok: true });
+      sendJson(res, 200, { ok: true, seq: state.controlSeq });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: error.message });
     }

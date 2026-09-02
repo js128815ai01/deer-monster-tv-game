@@ -34,7 +34,7 @@ REMOVE_BG_API_KEYS=第一組 remove.bg API key,第二組 remove.bg API key
 
 ```text
 REMOVE_BG_API_KEYS_FILE=C:\Users\js128\OneDrive\Documents\英文\real-or-ai-china-video-challenge\.secrets\remove.bg_api_key.txt
-REMOVE_BG_SIZE=preview
+REMOVE_BG_SIZE=auto
 REMOVE_BG_TIMEOUT_MS=12000
 REMOVE_BG_MAX_KEY_ATTEMPTS=4
 FALLBACK_REMBG_AI=0
