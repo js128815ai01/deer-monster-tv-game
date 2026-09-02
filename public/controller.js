@@ -33,6 +33,8 @@ let lastControlSentAt = 0;
 let resendTimer = null;
 const CONTROL_SEND_INTERVAL = 22;
 const CONTROL_RESEND_INTERVAL = 38;
+const TRANSPARENT_UPLOAD_SIZE = 520;
+const PHOTO_UPLOAD_SIZE = 640;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -142,12 +144,18 @@ function drawSourceToCanvas(targetCtx, width, height, source) {
 }
 
 function buildUploadImage() {
-  if (!lastImageSource || removePaper.checked) return preview.toDataURL("image/png");
   const uploadCanvas = document.createElement("canvas");
-  uploadCanvas.width = 900;
-  uploadCanvas.height = 900;
-  drawSourceToCanvas(uploadCanvas.getContext("2d"), uploadCanvas.width, uploadCanvas.height, lastImageSource);
-  return uploadCanvas.toDataURL("image/jpeg", 0.88);
+  const uploadCtx = uploadCanvas.getContext("2d");
+  if (!lastImageSource || removePaper.checked) {
+    uploadCanvas.width = TRANSPARENT_UPLOAD_SIZE;
+    uploadCanvas.height = TRANSPARENT_UPLOAD_SIZE;
+    uploadCtx.drawImage(preview, 0, 0, uploadCanvas.width, uploadCanvas.height);
+    return uploadCanvas.toDataURL("image/png");
+  }
+  uploadCanvas.width = PHOTO_UPLOAD_SIZE;
+  uploadCanvas.height = PHOTO_UPLOAD_SIZE;
+  drawSourceToCanvas(uploadCtx, uploadCanvas.width, uploadCanvas.height, lastImageSource);
+  return uploadCanvas.toDataURL("image/jpeg", 0.82);
 }
 
 function loadFile(file) {
@@ -195,7 +203,7 @@ async function uploadMonster(retried = false) {
   uploadStatus.textContent = "上傳中...";
   try {
     const image = buildUploadImage();
-    if (image.length > 12 * 1024 * 1024) {
+    if (image.length > 7 * 1024 * 1024) {
       uploadStatus.textContent = "圖片仍然太大，請靠近角色拍攝或改用較簡單背景。";
       uploadBtn.disabled = false;
       return;
