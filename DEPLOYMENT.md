@@ -20,6 +20,30 @@
 5. Health Check Path 設為 `/api/health`。
 6. 部署完成後，Render 會提供一個固定網址。
 
+## remove.bg API key
+
+正式服務請在 Render Dashboard 的 Environment Variables 加入。若有多組 key，請用逗號分隔：
+
+```text
+REMOVE_BG_API_KEYS=第一組 remove.bg API key,第二組 remove.bg API key
+```
+
+不要把真實 API key 寫進 GitHub。`render.yaml` 只保留 `sync: false` 欄位作為提示；如果服務已經建立完成，請直接到 Render Dashboard 手動新增或更新這個環境變數。
+
+本機測試時，可以在專案根目錄建立 `.env`：
+
+```text
+REMOVE_BG_API_KEYS_FILE=C:\Users\js128\OneDrive\Documents\英文\real-or-ai-china-video-challenge\.secrets\remove.bg_api_key.txt
+REMOVE_BG_SIZE=preview
+REMOVE_BG_TIMEOUT_MS=12000
+REMOVE_BG_MAX_KEY_ATTEMPTS=4
+FALLBACK_REMBG_AI=0
+```
+
+`.env` 已經被 `.gitignore` 忽略，不會被上傳到 GitHub。
+
+上線後可以打開 `/api/health` 確認目前去背狀態。若有正確設定 remove.bg，會看到 `background.provider` 是 `remove.bg`，且 `background.removeBgKeys` 會是已設定的 key 數量。
+
 ## 使用方式
 
 正式網址假設是：

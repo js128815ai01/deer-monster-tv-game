@@ -10,3 +10,15 @@ services:
         value: "20"
       - key: USE_REMBG
         value: "1"
+      - key: REMOVE_BG_API_KEYS
+        sync: false
+      - key: REMOVE_BG_SIZE
+        value: "preview"
+      - key: REMOVE_BG_TIMEOUT_MS
+        value: "12000"
+      - key: REMOVE_BG_MAX_KEY_ATTEMPTS
+        value: "4"
+      - key: FALLBACK_REMBG_AI
+        value: "0"
+      - key: IMAGE_PROCESSING_CONCURRENCY
+        value: "6"

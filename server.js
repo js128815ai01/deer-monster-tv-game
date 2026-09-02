@@ -5,6 +5,8 @@ const os = require("os");
 const crypto = require("crypto");
 const { spawn } = require("child_process");
 
+loadLocalEnvFile(path.join(__dirname, ".env"));
+
 const PORT = Number(process.env.PORT || 3128);
 const UPLOAD_LIMIT = Number(process.env.UPLOAD_LIMIT || 24 * 1024 * 1024);
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -13,11 +15,21 @@ const PYTHON_BIN = fs.existsSync(VENV_PYTHON) ? VENV_PYTHON : "python";
 const MODEL_DIR = path.join(__dirname, "models");
 const sessionId = crypto.randomBytes(4).toString("hex");
 const clients = new Set();
+
 const MAX_PLAYERS = Number(process.env.MAX_PLAYERS || 20);
 const BG_REMOVE_TIMEOUT_MS = Number(process.env.BG_REMOVE_TIMEOUT_MS || 45000);
 const HEURISTIC_TIMEOUT_MS = Number(process.env.HEURISTIC_TIMEOUT_MS || 9000);
+const REMOVE_BG_TIMEOUT_MS = Number(process.env.REMOVE_BG_TIMEOUT_MS || 12000);
+const REMOVE_BG_SIZE = process.env.REMOVE_BG_SIZE || "preview";
+const removeBgKeys = loadRemoveBgKeys();
+let removeBgCursor = 0;
+const REMOVE_BG_MAX_KEY_ATTEMPTS = Number(process.env.REMOVE_BG_MAX_KEY_ATTEMPTS || removeBgKeys.length || 1);
+const FALLBACK_REMBG_AI = process.env.FALLBACK_REMBG_AI === "1";
 const imageProcessingQueue = [];
-let imageProcessingRunning = false;
+let imageProcessingActive = 0;
+const IMAGE_PROCESSING_CONCURRENCY = Number(
+  process.env.IMAGE_PROCESSING_CONCURRENCY || (removeBgKeys.length > 0 ? Math.min(6, removeBgKeys.length * 3) : 1)
+);
 
 const state = {
   sessionId,
@@ -28,6 +40,49 @@ const state = {
   leaderboard: [],
   eliminatedIds: new Set(),
 };
+
+function loadLocalEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) return;
+  const content = fs.readFileSync(filePath, "utf8");
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#") || !trimmed.includes("=")) continue;
+    const [rawKey, ...valueParts] = trimmed.split("=");
+    const key = rawKey.trim();
+    if (!key || process.env[key]) continue;
+    process.env[key] = valueParts.join("=").trim().replace(/^['"]|['"]$/g, "");
+  }
+}
+
+function splitSecretLines(value) {
+  return String(value || "")
+    .split(/[\r\n,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function readSecretFile(filePath) {
+  if (!filePath) return [];
+  try {
+    if (!fs.existsSync(filePath)) return [];
+    return splitSecretLines(fs.readFileSync(filePath, "utf8"));
+  } catch (error) {
+    console.warn(`unable to read secret file ${filePath}:`, error.message);
+    return [];
+  }
+}
+
+function loadRemoveBgKeys() {
+  const keys = [
+    ...splitSecretLines(process.env.REMOVE_BG_API_KEYS),
+    ...splitSecretLines(process.env.REMOVE_BG_API_KEY),
+    ...readSecretFile(process.env.REMOVE_BG_API_KEYS_FILE),
+    ...readSecretFile(process.env.REMOVE_BG_API_KEY_FILE),
+    ...readSecretFile(path.join(__dirname, ".secrets", "remove_bg_api_key.txt")),
+    ...readSecretFile(path.join(__dirname, ".secrets", "remove.bg_api_key.txt")),
+  ];
+  return [...new Set(keys)];
+}
 
 function getLanIp() {
   const nets = os.networkInterfaces();
@@ -92,6 +147,18 @@ function publicState() {
     players: state.players,
     queueCount: state.queue.length,
     leaderboard: leaderboardEntries(),
+  };
+}
+
+function backgroundProcessingInfo() {
+  return {
+    provider: removeBgKeys.length > 0 ? "remove.bg" : "local",
+    removeBgKeys: removeBgKeys.length,
+    removeBgSize: REMOVE_BG_SIZE,
+    removeBgTimeoutMs: REMOVE_BG_TIMEOUT_MS,
+    removeBgMaxKeyAttempts: REMOVE_BG_MAX_KEY_ATTEMPTS,
+    concurrency: IMAGE_PROCESSING_CONCURRENCY,
+    fallbackAi: removeBgKeys.length > 0 ? FALLBACK_REMBG_AI : true,
   };
 }
 
@@ -192,6 +259,64 @@ function playerStatus(id) {
   };
 }
 
+function parseDataImage(image) {
+  const match = /^data:(image\/(?:png|jpeg|webp));base64,(.+)$/i.exec(String(image || ""));
+  if (!match) return null;
+  return {
+    mime: match[1].toLowerCase(),
+    buffer: Buffer.from(match[2], "base64"),
+  };
+}
+
+function nextRemoveBgKeys() {
+  if (removeBgKeys.length === 0) return [];
+  const ordered = [];
+  const keyCount = Math.max(1, Math.min(REMOVE_BG_MAX_KEY_ATTEMPTS, removeBgKeys.length));
+  for (let index = 0; index < keyCount; index += 1) {
+    ordered.push(removeBgKeys[(removeBgCursor + index) % removeBgKeys.length]);
+  }
+  removeBgCursor = (removeBgCursor + 1) % removeBgKeys.length;
+  return ordered;
+}
+
+async function removeBackgroundWithRemoveBg(image) {
+  if (removeBgKeys.length === 0) return { ok: false, image: null, error: "remove.bg key not configured" };
+  const parsed = parseDataImage(image);
+  if (!parsed) return { ok: false, image: null, error: "invalid image" };
+
+  let lastError = "remove.bg request failed";
+  for (const apiKey of nextRemoveBgKeys()) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REMOVE_BG_TIMEOUT_MS);
+    try {
+      const formData = new FormData();
+      const extension = parsed.mime === "image/jpeg" ? "jpg" : parsed.mime.replace("image/", "");
+      formData.append("size", REMOVE_BG_SIZE);
+      formData.append("image_file", new Blob([parsed.buffer], { type: parsed.mime }), `monster.${extension}`);
+
+      const response = await fetch("https://api.remove.bg/v1.0/removebg", {
+        method: "POST",
+        headers: { "X-Api-Key": apiKey },
+        body: formData,
+        signal: controller.signal,
+      });
+      const result = Buffer.from(await response.arrayBuffer());
+      if (response.ok && result.length > 0) {
+        return { ok: true, image: `data:image/png;base64,${result.toString("base64")}` };
+      }
+      lastError = `remove.bg ${response.status}: ${result.toString("utf8").slice(0, 180)}`;
+      if (![402, 429, 500, 502, 503, 504].includes(response.status)) break;
+    } catch (error) {
+      lastError = error.name === "AbortError" ? "remove.bg timeout" : error.message;
+      break;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  console.warn(lastError);
+  return { ok: false, image: null, error: lastError };
+}
+
 function runBackgroundRemoval(image, options = {}) {
   return new Promise((resolve) => {
     const script = path.join(__dirname, "remove_background.py");
@@ -253,6 +378,23 @@ function runBackgroundRemoval(image, options = {}) {
 
 async function processImage(image, removeBackground) {
   if (!removeBackground) return { ok: true, image };
+  const apiResult = await removeBackgroundWithRemoveBg(image);
+  if (apiResult.ok && apiResult.image) return apiResult;
+
+  if (removeBgKeys.length > 0 && !FALLBACK_REMBG_AI) {
+    const fallbackResult = await runBackgroundRemoval(image, {
+      mode: "heuristic",
+      useAi: false,
+      timeoutMs: HEURISTIC_TIMEOUT_MS,
+    });
+    if (fallbackResult.ok && fallbackResult.image) return fallbackResult;
+    return {
+      ok: false,
+      image: null,
+      error: fallbackResult.error || apiResult.error || "background removal failed",
+    };
+  }
+
   const aiResult = await runBackgroundRemoval(image, {
     mode: "ai",
     useAi: true,
@@ -269,7 +411,7 @@ async function processImage(image, removeBackground) {
   return {
     ok: false,
     image: null,
-    error: fallbackResult.error || aiResult.error || "background removal failed",
+    error: fallbackResult.error || aiResult.error || apiResult.error || "background removal failed",
   };
 }
 
@@ -282,18 +424,16 @@ function enqueueImageProcessing(image, removeBackground) {
 }
 
 async function runNextImageProcessing() {
-  if (imageProcessingRunning) return;
-  const job = imageProcessingQueue.shift();
-  if (!job) return;
-
-  imageProcessingRunning = true;
-  try {
-    job.resolve(await processImage(job.image, job.removeBackground));
-  } catch (error) {
-    job.resolve({ ok: false, image: null, error: error.message });
-  } finally {
-    imageProcessingRunning = false;
-    setTimeout(runNextImageProcessing, 0);
+  while (imageProcessingActive < IMAGE_PROCESSING_CONCURRENCY && imageProcessingQueue.length > 0) {
+    const job = imageProcessingQueue.shift();
+    imageProcessingActive += 1;
+    processImage(job.image, job.removeBackground)
+      .then(job.resolve)
+      .catch((error) => job.resolve({ ok: false, image: null, error: error.message }))
+      .finally(() => {
+        imageProcessingActive -= 1;
+        setTimeout(runNextImageProcessing, 0);
+      });
   }
 }
 
@@ -441,6 +581,7 @@ const server = http.createServer(async (req, res) => {
       sessionId,
       activePlayers: state.players.length,
       queueCount: state.queue.length,
+      background: backgroundProcessingInfo(),
     });
     return;
   }
