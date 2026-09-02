@@ -16,6 +16,8 @@ const clients = new Set();
 const MAX_PLAYERS = Number(process.env.MAX_PLAYERS || 20);
 const BG_REMOVE_TIMEOUT_MS = Number(process.env.BG_REMOVE_TIMEOUT_MS || 45000);
 const HEURISTIC_TIMEOUT_MS = Number(process.env.HEURISTIC_TIMEOUT_MS || 9000);
+const imageEnhancementQueue = [];
+let imageEnhancementRunning = false;
 
 const state = {
   sessionId,
@@ -101,6 +103,7 @@ function makePlayer() {
     status: "draft",
     name: "",
     image: null,
+    imageVersion: 0,
     uploadedAt: null,
     enteredAt: null,
     survivalMs: 0,
@@ -264,6 +267,32 @@ async function processImage(image, removeBackground) {
   });
   if (fallbackResult.ok && fallbackResult.image) return fallbackResult.image;
   return image;
+}
+
+function enqueueImageEnhancement(playerId, image, imageVersion) {
+  imageEnhancementQueue.push({ playerId, image, imageVersion });
+  runNextImageEnhancement();
+}
+
+async function runNextImageEnhancement() {
+  if (imageEnhancementRunning) return;
+  const job = imageEnhancementQueue.shift();
+  if (!job) return;
+
+  imageEnhancementRunning = true;
+  try {
+    const processedImage = await processImage(job.image, true);
+    const player = findPlayer(job.playerId);
+    if (!player || player.imageVersion !== job.imageVersion || processedImage === job.image) return;
+    player.image = processedImage;
+    broadcast("player", player);
+    broadcast("state", publicState());
+  } catch (error) {
+    console.warn("background image enhancement failed:", error.message);
+  } finally {
+    imageEnhancementRunning = false;
+    setTimeout(runNextImageEnhancement, 0);
+  }
 }
 
 function removeFrom(list, player) {
@@ -484,7 +513,8 @@ const server = http.createServer(async (req, res) => {
       removeFrom(state.drafts, player);
       removeFrom(state.queue, player);
       removeFrom(state.players, player);
-      player.image = await processImage(body.image, body.removeBackground !== false);
+      player.image = body.image;
+      player.imageVersion = (player.imageVersion || 0) + 1;
       player.name = String(body.name || "").trim().slice(0, 20);
       player.uploadedAt = new Date().toISOString();
       player.status = "ready";
@@ -500,6 +530,9 @@ const server = http.createServer(async (req, res) => {
         activePlayers: state.players.length,
         queueCount: state.queue.length,
       });
+      if (body.removeBackground !== false) {
+        enqueueImageEnhancement(player.id, body.image, player.imageVersion);
+      }
     } catch (error) {
       sendJson(res, 400, { ok: false, error: error.message });
     }

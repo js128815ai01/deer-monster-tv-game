@@ -150,7 +150,7 @@ function buildUploadImage() {
     uploadCanvas.width = TRANSPARENT_UPLOAD_SIZE;
     uploadCanvas.height = TRANSPARENT_UPLOAD_SIZE;
     uploadCtx.drawImage(preview, 0, 0, uploadCanvas.width, uploadCanvas.height);
-    return uploadCanvas.toDataURL("image/png");
+    return uploadCanvas.toDataURL("image/webp", 0.78);
   }
   uploadCanvas.width = PHOTO_UPLOAD_SIZE;
   uploadCanvas.height = PHOTO_UPLOAD_SIZE;
