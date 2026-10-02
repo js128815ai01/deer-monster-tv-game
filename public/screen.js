@@ -8,6 +8,7 @@ const timeValue = document.getElementById("timeValue");
 const hitValue = document.getElementById("hitValue");
 const lifeValue = document.getElementById("lifeValue");
 const leaderboardList = document.getElementById("leaderboardList");
+const SPAWN_INVINCIBLE_MS = 5000;
 
 const assets = {
   background: loadAsset("/assets/course-space.svg"),
@@ -221,17 +222,24 @@ function randomPlayerPosition(index) {
   };
 }
 
+function spawnInvincibleRemaining(serverPlayer) {
+  const enteredAt = Number(serverPlayer.enteredAt) || 0;
+  if (!enteredAt) return 0;
+  return clamp(SPAWN_INVINCIBLE_MS - (Date.now() - enteredAt), 0, SPAWN_INVINCIBLE_MS);
+}
+
 function syncPlayer(serverPlayer) {
   const existing = game.players.get(serverPlayer.id);
   const index = Math.max(0, (serverPlayer.slot || 1) - 1);
   const start = randomPlayerPosition(index);
+  const spawnShield = spawnInvincibleRemaining(serverPlayer);
   const player = existing || {
     id: serverPlayer.id,
     x: start.x,
     y: start.y,
     r: 36,
     life: 3,
-    invincible: 0,
+    invincible: spawnShield,
     hitFlash: 0,
     knockX: 0,
     knockY: 0,
@@ -243,6 +251,10 @@ function syncPlayer(serverPlayer) {
     removed: false,
   };
 
+  if (existing && serverPlayer.enteredAt && player.enteredAt !== serverPlayer.enteredAt) {
+    player.invincible = Math.max(player.invincible || 0, spawnShield);
+  }
+  player.enteredAt = serverPlayer.enteredAt || player.enteredAt || null;
   player.slot = serverPlayer.slot;
   player.name = serverPlayer.name || "";
   player.image = serverPlayer.image || null;
@@ -660,7 +672,30 @@ function drawDeerShip(x, y, now) {
   ctx.restore();
 }
 
+function drawInvincibleShield(player, now) {
+  if (player.invincible <= 0) return;
+  const remaining = clamp(player.invincible / SPAWN_INVINCIBLE_MS, 0, 1);
+  const pulse = 0.5 + Math.sin(now * 0.014) * 0.5;
+  const radius = player.r * (1.42 + pulse * 0.08);
+  ctx.save();
+  ctx.globalAlpha = 0.28 + remaining * 0.34;
+  ctx.strokeStyle = "#65d6ff";
+  ctx.lineWidth = 4;
+  ctx.shadowColor = "#65d6ff";
+  ctx.shadowBlur = 22;
+  ctx.beginPath();
+  ctx.arc(0, 0, radius, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.globalAlpha = 0.14 + pulse * 0.12;
+  ctx.fillStyle = "#65d6ff";
+  ctx.beginPath();
+  ctx.arc(0, 0, radius * 0.92, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawPlayer(player) {
+  const now = performance.now();
   const floatY = Math.sin(player.phase) * 5;
   if (player.imageElement) {
     const size = player.r * 2.1;
@@ -678,11 +713,12 @@ function drawPlayer(player) {
   }
 
   ctx.save();
-  const shake = player.hitFlash > 0 ? Math.sin(performance.now() * 0.09) * 5 : 0;
+  const shake = player.hitFlash > 0 ? Math.sin(now * 0.09) * 5 : 0;
   ctx.translate(player.x + shake, player.y + floatY);
+  drawInvincibleShield(player, now);
   ctx.rotate(player.tilt + Math.sin(player.phase * 1.7) * 0.035);
   ctx.scale(1 + player.squash, 1 - player.squash * 0.45);
-  if (player.invincible > 0) ctx.globalAlpha = 0.72 + Math.sin(performance.now() * 0.07) * 0.18;
+  if (player.invincible > 0) ctx.globalAlpha = 0.72 + Math.sin(now * 0.07) * 0.18;
   if (player.imageElement) {
     const size = player.r * 2.1;
     ctx.drawImage(player.imageElement, -size / 2, -size / 2, size, size);
