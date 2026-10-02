@@ -66,6 +66,14 @@ https://your-game-host.example.com/api/session
 
 取得 `uploadUrl`。
 
+若活動現場希望手機不需要和觸控電視在同一個 Wi-Fi，請讓兩邊都使用同一個 Render 正式網址：
+
+- 觸控電視開啟 `/screen`
+- 實體 QR Code 指向 `/controller.html`
+- 不要把 QR Code 設成 `localhost` 或 `192.168.x.x`
+
+只要手機能上網，就能連到正式服務；觸控電視也必須連到同一個正式服務，兩邊才會同步。
+
 ## 活動前提醒
 
 - 免費或低階主機可能會休眠，正式活動建議使用不會自動休眠的方案。

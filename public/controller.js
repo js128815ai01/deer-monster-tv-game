@@ -32,6 +32,7 @@ let controlInFlight = false;
 let controlPending = false;
 let lastControlSentAt = 0;
 let resendTimer = null;
+let controlClientSeq = 0;
 const CONTROL_SEND_INTERVAL = 22;
 const CONTROL_RESEND_INTERVAL = 38;
 const TRANSPARENT_UPLOAD_SIZE = 520;
@@ -54,6 +55,21 @@ function drawEmptyPreview() {
 
 function refreshUploadButton() {
   uploadBtn.disabled = !imageReady || uploadInFlight || enteringControl || stageStarted;
+}
+
+async function refreshSession() {
+  try {
+    const res = await fetch("/api/session", { cache: "no-store" });
+    const info = await res.json();
+    session = info.sessionId || "";
+  } catch {
+    session = "";
+  }
+  return Boolean(session);
+}
+
+function isSessionMismatch(res, data) {
+  return res.status === 403 || data?.error === "session mismatch";
 }
 
 function sourceSize(source) {
@@ -225,6 +241,12 @@ async function uploadMonster(retried = false) {
       }),
     });
     const data = await res.json();
+    if (isSessionMismatch(res, data) && !retried) {
+      playerId = "";
+      joined = false;
+      const joinedNow = await joinGame(true);
+      if (joinedNow) return uploadMonster(true);
+    }
     if (!data.ok && data.error === "player not found" && !retried) {
       playerId = "";
       joined = false;
@@ -270,6 +292,17 @@ async function enterStage() {
       body: JSON.stringify({ session, playerId }),
     });
     const data = await res.json();
+    if (isSessionMismatch(res, data)) {
+      playerId = "";
+      joined = false;
+      enteringControl = false;
+      countdownScreen.hidden = true;
+      uploadBtn.disabled = false;
+      uploadStatus.textContent = "場次已更新，請再按一次送進小鹿號關卡。";
+      await joinGame(true);
+      refreshUploadButton();
+      return;
+    }
     if (!data.ok) throw new Error(data.error || "start failed");
     if (data.status === "queued") {
       uploadStatus.textContent = `已完成準備，正在排隊第 ${data.queuePosition} 位。`;
@@ -315,6 +348,7 @@ function flushControl() {
   const payload = JSON.stringify({
     session,
     playerId,
+    clientSeq: ++controlClientSeq,
     x: control.x,
     y: control.y,
     boost: Math.hypot(control.x, control.y) > 0.58,
@@ -327,13 +361,16 @@ function flushControl() {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: payload,
-    keepalive: true,
     cache: "no-store",
   })
     .then((res) => {
       if (res.status === 202) return;
       if (res.status === 404) {
         showEliminated();
+        return;
+      }
+      if (res.status === 403) {
+        showSessionChanged();
       }
     })
     .catch(() => {})
@@ -341,6 +378,24 @@ function flushControl() {
       controlInFlight = false;
       if (controlPending && !eliminated) queueControlSend(true);
     });
+}
+
+function showSessionChanged() {
+  eliminated = false;
+  stageStarted = false;
+  enteringControl = false;
+  joined = false;
+  playerId = "";
+  activePointer = null;
+  lastControl = { x: 0, y: 0 };
+  stick.style.transform = "translate(-50%, -50%)";
+  countdownScreen.hidden = true;
+  deathScreen.hidden = true;
+  controlPanel.hidden = true;
+  uploadPanel.hidden = false;
+  controllerRoot.classList.remove("is-playing");
+  uploadStatus.textContent = "場次已更新，請重新送進小鹿號關卡。";
+  refreshSession().finally(refreshUploadButton);
 }
 
 function showEliminated() {
@@ -361,6 +416,10 @@ async function pollPlayerStatus() {
   if (!playerId || eliminated || !stageStarted) return;
   try {
     const res = await fetch(`/api/player-status?session=${encodeURIComponent(session)}&playerId=${encodeURIComponent(playerId)}`);
+    if (res.status === 403) {
+      showSessionChanged();
+      return;
+    }
     if (!res.ok) return;
     const data = await res.json();
     if (data.status === "eliminated" || data.status === "missing") {
@@ -440,19 +499,15 @@ setInterval(pollPlayerStatus, 700);
 
 drawEmptyPreview();
 
-async function joinGame() {
+async function joinGame(forceRefresh = false) {
   if (!session) {
-    try {
-      const res = await fetch("/api/session");
-      const info = await res.json();
-      session = info.sessionId || "";
-    } catch {
-      session = "";
-    }
-    if (!session) {
+    const hasSession = await refreshSession();
+    if (!hasSession) {
       uploadStatus.textContent = "無法取得課程場次，請重新整理頁面。";
       return false;
     }
+  } else if (forceRefresh) {
+    await refreshSession();
   }
   try {
     const res = await fetch("/api/join", {
@@ -461,6 +516,10 @@ async function joinGame() {
       body: JSON.stringify({ session }),
     });
     const data = await res.json();
+    if (isSessionMismatch(res, data) && !forceRefresh) {
+      session = "";
+      return joinGame(true);
+    }
     if (!data.ok) {
       uploadStatus.textContent = "目前無法加入，請稍後再試。";
       joined = false;
@@ -474,7 +533,7 @@ async function joinGame() {
     refreshUploadButton();
     return true;
   } catch (error) {
-    uploadStatus.textContent = "無法連到觸控電視，請確認同一個 Wi-Fi。";
+    uploadStatus.textContent = "無法連到遊戲伺服器，請確認手機與電視都使用同一個正式網址。";
     joined = false;
     refreshUploadButton();
     return false;

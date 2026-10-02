@@ -773,11 +773,17 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 404, { ok: false, error: "player not found" });
         return;
       }
+      const clientSeq = Number(body.clientSeq) || 0;
+      if (clientSeq && player.controlClientSeq && clientSeq < player.controlClientSeq) {
+        sendJson(res, 200, { ok: true, stale: true, seq: state.controlSeq });
+        return;
+      }
       player.control = {
         x: Math.max(-1, Math.min(1, Number(body.x) || 0)),
         y: Math.max(-1, Math.min(1, Number(body.y) || 0)),
         boost: Boolean(body.boost),
       };
+      if (clientSeq) player.controlClientSeq = clientSeq;
       state.controlSeq += 1;
       player.controlSeq = state.controlSeq;
       broadcast("control", { playerId: player.id, control: player.control });
